@@ -48,7 +48,7 @@ std::string searchAndReplace(std::string &s,
 /* *********************************************************************** */
 
 ofxFontStash::ofxFontStash(){
-	stashFontID = 0;
+//	stashFontID = 0;
 	lineHeight = 1.0f;
 	stash = NULL;
 	batchDrawing = false;
@@ -58,7 +58,7 @@ ofxFontStash::~ofxFontStash(){
 	if(stash != NULL) sth_delete(stash);
 }
 
-bool ofxFontStash::setup( string fontFile, float lineHeightPercent , int texDimension /*has to be powerfOfTwo!*/, bool createMipMaps, int intraCharPadding){
+bool ofxFontStash::setup(float lineHeightPercent , int texDimension /*has to be powerfOfTwo!*/, bool createMipMaps, int intraCharPadding){
 	
 	if (stash == NULL){
 		extraPadding = intraCharPadding;
@@ -67,17 +67,29 @@ bool ofxFontStash::setup( string fontFile, float lineHeightPercent , int texDime
 		stash = sth_create(texDimension,texDimension, createMipMaps, intraCharPadding);
 		stash->doKerning = 0; //kerning disabled by default
 		stash->charSpacing = 0.0; //spacing neutral by default
-		stashFontID = sth_add_font( stash, ofToDataPath( fontFile ).c_str() );
-		if ( stashFontID != 0){
-			ofLogNotice("ofxFontStash", "loaded font '%s' in texture (%d x %d)", fontFile.c_str(), texDimension, texDimension );
-			return true;
-		}else{
-			ofLogError("ofxFontStash", "Can't load font! '%s'", fontFile.c_str() );
-		}
 	}else{
-		ofLogError("ofxFontStash", "don't call setup() more than once! %s", fontFile.c_str() );
+		ofLogError("ofxFontStash", "don't call setup() more than once!");
 	}
+
 	return false;
+}
+
+void ofxFontStash::addFont(const std::string &fontFile)
+{
+	if (stash == NULL) {
+		ofLogError("ofxFontStash::addFont", "error: font stash not initialized, call setup first");
+		return;
+	}
+
+	int fontId = sth_add_font(stash, ofToDataPath(fontFile).c_str());
+	if (fontId <= 0) {
+		ofLogError("ofxFontStash", "Can't load font! '%s'", fontFile.c_str() );
+		return;
+	}
+
+	fontIds.push_back(fontId);
+
+	ofLogNotice("ofxFontStash", "loaded font '%s' in texture (%d x %d)", fontFile.c_str(), texDimension, texDimension );
 }
 
 
@@ -89,7 +101,7 @@ void ofxFontStash::draw( string text, float size, float x, float y){
 		glPushMatrix();
 		glTranslatef(x, y, 0.0);
 		sth_begin_draw(stash);
-		sth_draw_text( stash, stashFontID, size, 0, 0 , text.c_str(), &dx ); //this might draw
+		sth_draw_text( stash, fontIds[0], size, 0, 0 , text.c_str(), &dx ); //this might draw
 		sth_end_draw(stash); // this actually draws
 		glPopMatrix();
 	}else{
@@ -112,7 +124,7 @@ void ofxFontStash::drawMultiLine( string text, float size, float x, float y){
 			while ( getline(ss, s, '\n') ) {
 				//cout << s << endl;
 				float dx = 0;
-				sth_draw_text( stash, stashFontID, size, 0.0f, size * lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * line, s.c_str(), &dx );
+				sth_draw_text( stash, fontIds[0], size, 0.0f, size * lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * line, s.c_str(), &dx );
 				line ++;
 			}
 			sth_end_draw(stash);
@@ -248,6 +260,126 @@ ofRectangle ofxFontStash::drawMultiLineColumn( string & text, float size, float 
 	return totalArea;
 }
 
+
+
+// using this function:
+// add one of the following as a single word to change text font and color.
+// @id - to change font id
+// #0x000000 - to change color
+//
+// example 1: "this is a #0x0000ff blue 0x000000 color"
+// example 2: "this is the @1 second @0 font, and this is the @2 third @0 font."
+// example 3: "the #0xff0000 red #0x000000 apple is on the @1 big @0 tree."
+
+ofVec2f ofxFontStash::dmc(string &text, float size, float columnWidth)
+{
+	ofVec2f totalSize;
+	float maxX=0;
+
+
+	if (stash == NULL ||
+		fontIds.empty()) {
+		ofLogError("ofxFontStash::dmc", "error: stash not initialized or no font");
+		return totalSize;
+	}
+
+	vector<std::string> allWords;
+	vector<ofVec2f> wordSizes;
+	vector<int> wordFonts;
+	vector<ofColor> wordColors;
+
+	int currentFontId = fontIds[0];
+	ofColor currentColor = ofGetStyle().color;
+
+	// first, calculate the sizes of all the words
+	//
+	vector<std::string> lines = ofSplitString(text, "\n");
+	for (int i=0; i<lines.size(); i++) {
+
+		vector<std::string> words = ofSplitString(lines[i], " ");
+
+		for (int j=0; j<words.size(); j++) {
+
+			// handle '@' code to change font id
+			if (isFontCode(words[j])) {
+				currentFontId = fontIds[ofToInt(words[j].substr(1, words[j].length()))];
+				continue;
+			}
+
+			// handle '#' code to change color
+			if (isColorCode(words[j])) {
+				currentColor = ofColor::fromHex(ofHexToInt(words[j].substr(1, words[j].length())));
+				continue;
+			}
+
+			std::string word = words[j];
+
+			// add ' ' because we removed it when we did the split
+			if (j != words.size()-1) {
+				word += " ";
+			}
+
+			float x, y, w, h;
+			sth_dim_text( stash, currentFontId, size, word.c_str(), &x, &y, &w, &h);
+
+			allWords.push_back(word);
+			wordSizes.push_back(ofVec2f(w, h));
+			wordFonts.push_back(currentFontId);
+			wordColors.push_back(currentColor);
+
+		}
+
+		// all end of line
+		allWords.push_back("\n");
+		// a place holder to match indexes
+		wordSizes.push_back(ofVec2f(0, 0));
+		wordFonts.push_back(currentFontId);
+		wordColors.push_back(currentColor);
+	}
+
+	// now draw the text
+	//
+	ofVec2f drawPointer(0, 0);
+
+	sth_begin_draw(stash);
+
+	for (int i=0; i<allWords.size(); i++) {
+
+		// do we need to jump a line?
+		if (drawPointer.x + wordSizes[i].x > columnWidth ||
+			allWords[i] == "\n")
+		{
+			// jump one line down
+			drawPointer.y += lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * size;
+			drawPointer.x = 0;
+		}
+
+		// we need to flush the vertices if we change the color
+		if (wordColors[i] != ofGetStyle().color) {
+			sth_end_draw(stash);
+			sth_begin_draw(stash);
+
+			ofSetColor(wordColors[i]);
+		}
+
+		float dx = 0;
+		sth_draw_text( stash, wordFonts[i], size, drawPointer.x, drawPointer.y, allWords[i].c_str(), &dx );
+		drawPointer.x += wordSizes[i].x;
+
+		// save maxX so we'll return the size
+		if (drawPointer.x > maxX) {
+			maxX = drawPointer.x;
+		}
+	}
+
+	sth_end_draw(stash);
+
+	return ofVec2f(maxX, drawPointer.y);
+}
+
+
+
+
 void ofxFontStash::beginBatch(){
 	if(stash != NULL){
 		batchDrawing = true;
@@ -266,9 +398,7 @@ void ofxFontStash::drawBatch( string text, float size, float x, float y){
 	if (stash != NULL){
 		if(batchDrawing){
 			float dx = 0;
-			sth_begin_draw(stash);
-			sth_draw_text( stash, stashFontID, size, x, y, text.c_str(), &dx ); //this might draw
-			sth_end_draw(stash); // this actually draws
+			sth_draw_text( stash, fontIds[0], size, x, y, text.c_str(), &dx ); //this might draw
 		}else{
 			ofLogError("ofxFontStash", "can't drawBatch() without calling beginBatch() first!");
 		}
@@ -288,7 +418,7 @@ void ofxFontStash::drawMultiLineBatch( string text, float size, float x, float y
 			while ( getline(ss, s, '\n') ) {
 				//cout << s << endl;
 				float dx = 0;
-				sth_draw_text( stash, stashFontID, size, 0.0f, size * lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * line, s.c_str(), &dx );
+				sth_draw_text( stash, fontIds[0], size, 0.0f, size * lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * line, s.c_str(), &dx );
 				line ++;
 			}
 		}else{
@@ -345,7 +475,7 @@ ofRectangle ofxFontStash::getBBox( string text, float size, float xx, float yy )
 		while ( getline(ss, s, '\n') ) {
 			float dx = 0;
 			float w, h, x, y;
-			sth_dim_text( stash, stashFontID, size, s.c_str(), &x, &y, &w, &h);
+			sth_dim_text( stash, fontIds[0], size, s.c_str(), &x, &y, &w, &h);
 			totalArea.x = x + xx;
 			totalArea.y = yy + y ;
 			w = fabs (w - x);
@@ -393,7 +523,13 @@ void ofxFontStash::setLineHeight(float percent){
 // ofTrueTypeFont parity methods
 bool ofxFontStash::loadFont(string filename, int fsize, float lineHeightPercent, int textureDimension){
     fontSize = fsize;
-    return setup(filename, lineHeightPercent, textureDimension);
+	bool ret = setup(lineHeightPercent, textureDimension);
+	if (!ret) {
+		return false;
+	}
+
+	addFont(filename);
+	return ret;
 }
 
 bool ofxFontStash::isLoaded(){
