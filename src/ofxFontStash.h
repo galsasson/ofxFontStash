@@ -42,6 +42,7 @@
 
 extern "C" {
 	#include "fontstash.h"
+	#include "stb_truetype.h"
 }
 
 class ofxFontStash{
@@ -79,7 +80,9 @@ class ofxFontStash{
 											int maxLines = 0, bool giveBackNewLinedText = false,
 											bool * wordsWereTruncated = NULL );
 
-		ofVec2f dmc(string &text, float size, float columnWidth);
+
+		ofVec2f dmc(const string &text, float size, float columnWidth, bool topLeftAlign = false, bool dryrun = false);
+		float getFontHeight(float fontSize);
 
 		//if the text has newlines, it will be treated as if was called into drawMultiLine()
 		ofRectangle getBBox( string text, float size, float x, float y );
@@ -126,7 +129,7 @@ class ofxFontStash{
 		float				lineHeight; // as percent, 1.0 would be normal
 		struct sth_stash*	stash;
 
-	int texDimension;
+		int texDimension;
 		vector<int>			fontIds;
 //		int					stashFontID;
 		bool				batchDrawing;

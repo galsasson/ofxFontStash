@@ -65,6 +65,7 @@ void sth_vmetrics(struct sth_stash* stash,
 
 void sth_delete(struct sth_stash* stash);
 
+	
 #if __cplusplus
 }
 #endif

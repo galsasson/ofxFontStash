@@ -58,12 +58,12 @@ ofxFontStash::~ofxFontStash(){
 	if(stash != NULL) sth_delete(stash);
 }
 
-bool ofxFontStash::setup(float lineHeightPercent , int texDimension /*has to be powerfOfTwo!*/, bool createMipMaps, int intraCharPadding){
+bool ofxFontStash::setup(float lineHeightPercent , int _texDimension /*has to be powerfOfTwo!*/, bool createMipMaps, int intraCharPadding){
 	
 	if (stash == NULL){
 		extraPadding = intraCharPadding;
 		lineHeight = lineHeightPercent;
-		texDimension = ofNextPow2(texDimension);
+		texDimension = ofNextPow2(_texDimension);
 		stash = sth_create(texDimension,texDimension, createMipMaps, intraCharPadding);
 		stash->doKerning = 0; //kerning disabled by default
 		stash->charSpacing = 0.0; //spacing neutral by default
@@ -271,16 +271,15 @@ ofRectangle ofxFontStash::drawMultiLineColumn( string & text, float size, float 
 // example 2: "this is the @1 second @0 font, and this is the @2 third @0 font."
 // example 3: "the #0xff0000 red #0x000000 apple is on the @1 big @0 tree."
 
-ofVec2f ofxFontStash::dmc(string &text, float size, float columnWidth)
+ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, bool topLeftAlign, bool dryrun)
 {
-	ofVec2f totalSize;
 	float maxX=0;
 
 
 	if (stash == NULL ||
 		fontIds.empty()) {
 		ofLogError("ofxFontStash::dmc", "error: stash not initialized or no font");
-		return totalSize;
+		return ofVec2f(0,0);
 	}
 
 	vector<std::string> allWords;
@@ -341,13 +340,24 @@ ofVec2f ofxFontStash::dmc(string &text, float size, float columnWidth)
 	//
 	ofVec2f drawPointer(0, 0);
 
-	sth_begin_draw(stash);
+	if (topLeftAlign) {
+		float asc, desc, lineh;
+		sth_vmetrics(stash, wordFonts[0], size, &asc, &desc, &lineh);
+
+		ofPushMatrix();
+		ofTranslate(0, asc);
+	}
+
+	if (!dryrun) {
+		sth_begin_draw(stash);
+	}
 
 	for (int i=0; i<allWords.size(); i++) {
 
 		// do we need to jump a line?
-		if (drawPointer.x + wordSizes[i].x > columnWidth ||
-			allWords[i] == "\n")
+		if ((drawPointer.x + wordSizes[i].x > columnWidth ||
+			allWords[i] == "\n") &&
+			drawPointer.x != 0)
 		{
 			// jump one line down
 			drawPointer.y += lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * size;
@@ -355,15 +365,19 @@ ofVec2f ofxFontStash::dmc(string &text, float size, float columnWidth)
 		}
 
 		// we need to flush the vertices if we change the color
-		if (wordColors[i] != ofGetStyle().color) {
-			sth_end_draw(stash);
-			sth_begin_draw(stash);
+		if (!dryrun) {
+			if (wordColors[i] != ofGetStyle().color) {
+				sth_end_draw(stash);
+				sth_begin_draw(stash);
 
-			ofSetColor(wordColors[i]);
+				ofSetColor(wordColors[i]);
+			}
 		}
 
 		float dx = 0;
-		sth_draw_text( stash, wordFonts[i], size, drawPointer.x, drawPointer.y, allWords[i].c_str(), &dx );
+		if (!dryrun) {
+			sth_draw_text( stash, wordFonts[i], size, drawPointer.x, drawPointer.y, allWords[i].c_str(), &dx );
+		}
 		drawPointer.x += wordSizes[i].x;
 
 		// save maxX so we'll return the size
@@ -372,9 +386,25 @@ ofVec2f ofxFontStash::dmc(string &text, float size, float columnWidth)
 		}
 	}
 
-	sth_end_draw(stash);
+	if (!dryrun) {
+		sth_end_draw(stash);
+	}
+
+	if (topLeftAlign) {
+		ofPopMatrix();
+	}
 
 	return ofVec2f(maxX, drawPointer.y);
+}
+
+
+float ofxFontStash::getFontHeight(float fontSize)
+{
+	float asc, desc, lineh;
+
+	sth_vmetrics(stash, fontIds[0], fontSize, &asc, &desc, &lineh);
+
+	return asc - desc;
 }
 
 
