@@ -266,10 +266,12 @@ ofRectangle ofxFontStash::drawMultiLineColumn( string & text, float size, float 
 // add one of the following as a single word to change text font and color.
 // @id - to change font id
 // #0x000000 - to change color
+// %scale - scale size parameter (1 will draw at 'size' size)
 //
 // example 1: "this is a #0x0000ff blue 0x000000 color"
 // example 2: "this is the @1 second @0 font, and this is the @2 third @0 font."
 // example 3: "the #0xff0000 red #0x000000 apple is on the @1 big @0 tree."
+// example 4: "this is %2.2 more than double %1 the size"
 
 ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, bool topLeftAlign, bool dryrun)
 {
@@ -286,9 +288,11 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 	vector<ofVec2f> wordSizes;
 	vector<int> wordFonts;
 	vector<ofColor> wordColors;
+	vector<float> wordScales;
 
 	int currentFontId = fontIds[0];
 	ofColor currentColor = ofGetStyle().color;
+	float currentScale = 1;
 
 	// first, calculate the sizes of all the words
 	//
@@ -311,6 +315,12 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 				continue;
 			}
 
+			// handle '%' code to change scale
+			if (isScaleCode(words[j])) {
+				currentScale = ofToFloat(words[j].substr(1, words[j].length()));
+				continue;
+			}
+
 			std::string word = words[j];
 
 			// add ' ' because we removed it when we did the split
@@ -319,12 +329,13 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 			}
 
 			float x, y, w, h;
-			sth_dim_text( stash, currentFontId, size, word.c_str(), &x, &y, &w, &h);
+			sth_dim_text( stash, currentFontId, size*currentScale, word.c_str(), &x, &y, &w, &h);
 
 			allWords.push_back(word);
 			wordSizes.push_back(ofVec2f(w, h));
 			wordFonts.push_back(currentFontId);
 			wordColors.push_back(currentColor);
+			wordScales.push_back(currentScale);
 
 		}
 
@@ -334,14 +345,16 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 		wordSizes.push_back(ofVec2f(0, 0));
 		wordFonts.push_back(currentFontId);
 		wordColors.push_back(currentColor);
+		wordScales.push_back(currentScale);
 	}
 
 	// now draw the text
 	//
 	ofVec2f drawPointer(0, 0);
+	float asc;
 
 	if (topLeftAlign) {
-		float asc, desc, lineh;
+		float desc, lineh;
 		sth_vmetrics(stash, wordFonts[0], size, &asc, &desc, &lineh);
 
 		ofPushMatrix();
@@ -360,7 +373,7 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 			drawPointer.x != 0)
 		{
 			// jump one line down
-			drawPointer.y += lineHeight * OFX_FONT_STASH_LINE_HEIGHT_MULT * size;
+			drawPointer.y += lineHeight * size * wordScales[i];
 			drawPointer.x = 0;
 		}
 
@@ -376,7 +389,7 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 
 		float dx = 0;
 		if (!dryrun) {
-			sth_draw_text( stash, wordFonts[i], size, drawPointer.x, drawPointer.y, allWords[i].c_str(), &dx );
+			sth_draw_text( stash, wordFonts[i], size * wordScales[i], drawPointer.x, drawPointer.y, allWords[i].c_str(), &dx );
 		}
 		drawPointer.x += wordSizes[i].x;
 
@@ -394,7 +407,7 @@ ofVec2f ofxFontStash::dmc(const string &text, float size, float columnWidth, boo
 		ofPopMatrix();
 	}
 
-	return ofVec2f(maxX, drawPointer.y);
+	return ofVec2f(maxX, drawPointer.y - (lineHeight * size - asc));
 }
 
 

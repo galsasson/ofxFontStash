@@ -139,6 +139,7 @@ class ofxFontStash{
 
 	bool isFontCode(const std::string& str) { return str.length()==2 && str[0] == '@'; }
 	bool isColorCode(const std::string& str) { return str.length()==9 && str[0] == '#'; }
+	bool isScaleCode(const std::string& str) { return str[0] == '%'; }
     
         // ofTrueTypeFont parity attributes
         int fontSize;
